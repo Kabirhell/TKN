@@ -1,9 +1,10 @@
 import requests
 import json
+import re
 
 def extract_access_token(cookies):
     """
-    Extracts a Facebook access token using the provided cookies.
+    Extracts a Facebook access token using the provided cookies by simulating a mobile endpoint request.
 
     Args:
         cookies (dict): Dictionary of Facebook cookies (e.g., 'c_user', 'xs', 'datr', etc.)
@@ -11,69 +12,78 @@ def extract_access_token(cookies):
     Returns:
         str: Facebook access token, or None if extraction fails
     """
-    # Simulate a request to the Facebook Graph API
-    # This endpoint requires cookie-based authentication
-    graph_api_url = "https://graph.facebook.com/v13.0/me"
+    # Target a mobile endpoint that might expose an access token
+    mobile_url = "https://m.facebook.com/composer/ocelot/async_loader/?publisher=feed"
 
-    # Set the cookies in the request headers
-    headers = {"Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items())}
+    # Prepare headers to mimic a browser request
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.105 Mobile Safari/537.36",
+        "Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items()),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    }
 
     try:
-        # Make the request to the Graph API
-        response = requests.get(graph_api_url, headers=headers)
+        # Make the request to the mobile endpoint
+        response = requests.get(mobile_url, headers=headers, timeout=10)
 
         # Check if the response was successful
         if response.status_code == 200:
-            # Parse the JSON response
-            data = json.loads(response.text)
-
-            # Extract the access token from the response
-            access_token = data.get("access_token")
-
-            # If the access token is available, return it
-            if access_token:
-                return access_token
+            # Look for an access token in the response text using regex
+            token_match = re.search(r'"accessToken":"(EA[A-Za-z0-9]+)"', response.text)
+            if token_match:
+                return token_match.group(1)
             else:
-                # If the access token is not available, try to construct it using the provided cookies
-                return construct_access_token(cookies)
+                print("No access token found in response.")
+                return None
         else:
-            # If the response was not successful, raise an exception
-            raise Exception(f"Failed to extract access token: {response.status_code}")
+            raise Exception(f"Request failed with status code: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Network error occurred: {str(e)}")
+        return None
     except Exception as e:
-        # Handle any exceptions that occur during the process
         print(f"Error extracting access token: {str(e)}")
         return None
 
-def construct_access_token(cookies):
+def validate_token(token):
     """
-    Constructs a Facebook access token using the provided cookies.
+    Validates the extracted access token by making a test request to the Graph API.
 
     Args:
-        cookies (dict): Dictionary of Facebook cookies (e.g., 'c_user', 'xs', 'datr', etc.)
+        token (str): The extracted Facebook access token
 
     Returns:
-        str: Constructed Facebook access token, or None if construction fails
+        bool: True if the token is valid, False otherwise
     """
-    # Construct the access token using the provided cookies
-    # This is a simplified example and may not work for all cases
-    access_token = f"Bearer {cookies.get('c_user')}:{cookies.get('xs')}:{cookies.get('datr')}"
+    graph_api_url = "https://graph.facebook.com/v13.0/me"
+    params = {"access_token": token}
 
-    return access_token
+    try:
+        response = requests.get(graph_api_url, params=params)
+        return response.status_code == 200
+    except Exception:
+        return False
 
 def main():
     # Sample usage example with dummy cookie data
     cookies = {
         "c_user": "1234567890",
         "xs": "abcdefghijklmnopqrstuvwxyz",
-        "datr": "1234567890abcdef"
+        "datr": "1234567890abcdef",
+        "fr": "dummyfrvalue",
     }
 
+    # Extract the access token
     access_token = extract_access_token(cookies)
 
     if access_token:
         print(f"Extracted access token: {access_token}")
+        # Validate the token
+        if validate_token(access_token):
+            print("Token is valid!")
+        else:
+            print("Token is invalid or expired.")
     else:
-        print("Failed to extract access token")
+        print("Failed to extract access token.")
 
 if __name__ == "__main__":
     main()
