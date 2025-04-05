@@ -1,9 +1,12 @@
 from flask import Flask, request, render_template_string
 import re
+import sys
+import socket
+from http.server import HTTPServer
 
 app = Flask(__name__)
 
-# HTML template with embedded Python logic
+# HTML template
 TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -58,26 +61,22 @@ TEMPLATE = '''
 
 def extract_token_from_cookies(cookies):
     try:
-        # Common patterns for Facebook access tokens
         token_patterns = [
-            r'EAA[0-9A-Za-z]+',  # Common Facebook token pattern
+            r'EAA[0-9A-Za-z]+',
             r'access_token=([^&]+)'
         ]
         
-        # First try to find token directly in cookies
         for pattern in token_patterns:
             match = re.search(pattern, cookies)
             if match:
                 return match.group(0) if pattern == token_patterns[0] else match.group(1)
         
-        # If no direct token found, try to extract from common cookie fields
         cookie_dict = {}
         for cookie in cookies.split(';'):
             if '=' in cookie:
                 key, value = cookie.split('=', 1)
                 cookie_dict[key.strip()] = value.strip()
         
-        # Check common Facebook cookie names that might contain token
         possible_token_fields = ['c_user', 'xs', 'fr', 'datr']
         for field in possible_token_fields:
             if field in cookie_dict:
@@ -89,6 +88,20 @@ def extract_token_from_cookies(cookies):
         return "No token found in provided cookies"
     except Exception as e:
         return f"Error: {str(e)}"
+
+def check_port(port):
+    """Check if a port is available"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) != 0
+
+def find_available_port(start_port=5000, max_attempts=10):
+    """Find an available port starting from start_port"""
+    port = start_port
+    for _ in range(max_attempts):
+        if check_port(port):
+            return port
+        port += 1
+    return None
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -103,4 +116,17 @@ def index():
     return render_template_string(TEMPLATE, cookies=cookies, result=result)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Try to find an available port
+    default_port = 5000
+    port = find_available_port(default_port)
+    
+    if port is None:
+        print(f"Error: Could not find an available port starting from {default_port}")
+        sys.exit(1)
+    
+    try:
+        print(f"Starting server on http://localhost:{port}")
+        app.run(host='0.0.0.0', port=port, debug=True)
+    except Exception as e:
+        print(f"Failed to start server: {str(e)}")
+        sys.exit(1)
