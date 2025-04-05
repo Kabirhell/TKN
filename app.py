@@ -15,7 +15,7 @@ TEMPLATE = '''
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 600px;
+            max-width: 800px;
             margin: 20px auto;
             padding: 20px;
         }
@@ -40,6 +40,11 @@ TEMPLATE = '''
             border: 1px solid #ddd;
             {% if result %}display: block;{% else %}display: none;{% endif %}
         }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
@@ -59,45 +64,49 @@ TEMPLATE = '''
 
 def extract_token_from_cookies(cookies):
     try:
-        # Updated patterns for Facebook tokens (as of 2025 might need adjustment)
+        # Token patterns
         token_patterns = [
-            r'EAA[0-9A-Za-z]{20,}',  # Long Facebook token pattern
-            r'access_token=([^&;\s]+)',  # Standard access token format
-            r'"accessToken":"([^"]+)"',  # JSON format
-            r'token=([^&;\s]+)',  # Alternative token format
+            r'EAA[0-9A-Za-z]{20,}',
+            r'access_token=([^&;\s]+)',
+            r'"accessToken":"([^"]+)"',
+            r'token=([^&;\s]+)',
         ]
         
-        # Try to find token directly in cookies
+        # Check for direct token
         for pattern in token_patterns:
             match = re.search(pattern, cookies)
             if match:
                 return f"Found token: {match.group(1) if match.lastindex else match.group(0)}"
         
-        # Parse cookies into dictionary
+        # Parse cookies
         cookie_dict = {}
         for cookie in cookies.split(';'):
             if '=' in cookie:
                 key, value = cookie.split('=', 1)
                 cookie_dict[key.strip()] = value.strip()
         
-        # Expanded list of possible Facebook cookie fields
-        possible_token_fields = [
-            'c_user', 'xs', 'fr', 'datr', 'sb', 'wd', 
-            'presence', 'act', 'm_pixel_ratio', 'locale'
-        ]
+        # Check cookie fields
+        possible_token_fields = ['c_user', 'xs', 'fr', 'datr', 'sb', 'wd', 'presence']
+        found_cookies = list(cookie_dict.keys())
         
-        # Check each field for potential tokens
-        for field in possible_token_fields:
-            if field in cookie_dict:
-                for pattern in token_patterns:
-                    match = re.search(pattern, cookie_dict[field])
-                    if match:
-                        return f"Found token in {field}: {match.group(1) if match.lastindex else match.group(0)}"
+        result = "No direct access token found in cookies.<br><br>"
+        result += f"Available cookies: {', '.join(found_cookies)}<br><br>"
         
-        # If still no token, show available cookies for debugging
-        if cookie_dict:
-            return f"No token found. Available cookies: {', '.join(cookie_dict.keys())}"
-        return "No valid cookies provided"
+        # Check if key cookies are present
+        if 'c_user' in cookie_dict and 'xs' in cookie_dict:
+            result += "Valid session cookies detected (c_user and xs), but no API token.<br>"
+            result += "Facebook API tokens are typically not stored in cookies anymore.<br><br>"
+            result += "<strong>Next Steps:</strong><br>"
+            result += "1. Open Facebook in your browser<br>"
+            result += "2. Press F12 (Developer Tools)<br>"
+            result += "3. Go to Application tab > Storage > Local Storage > facebook.com<br>"
+            result += "4. Look for a key containing 'token' or 'accessToken'<br>"
+            result += "5. Alternatively, use the browser's Network tab to capture API requests<br>"
+            result += "   - Look for requests with Authorization headers<br>"
+        else:
+            result += "Missing essential session cookies. Please ensure you're copying all cookies from an active Facebook session."
+        
+        return result
         
     except Exception as e:
         return f"Error processing cookies: {str(e)}"
