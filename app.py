@@ -1,6 +1,6 @@
 import requests
-import json
 import re
+import json
 
 def extract_access_token(cookies):
     """
@@ -20,6 +20,7 @@ def extract_access_token(cookies):
         "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.105 Mobile Safari/537.36",
         "Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items()),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Referer": "https://m.facebook.com/",
     }
 
     try:
@@ -54,22 +55,30 @@ def validate_token(token):
     Returns:
         bool: True if the token is valid, False otherwise
     """
-    graph_api_url = "https://graph.facebook.com/v13.0/me"
-    params = {"access_token": token}
+    graph_api_url = "https://graph.facebook.com/v19.0/me"
+    params = {
+        "access_token": token,
+        "fields": "id,name"  # Simple fields to verify token validity
+    }
 
     try:
-        response = requests.get(graph_api_url, params=params)
-        return response.status_code == 200
-    except Exception:
+        response = requests.get(graph_api_url, params=params, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if "id" in data:
+                return True
+        return False
+    except Exception as e:
+        print(f"Token validation failed: {str(e)}")
         return False
 
 def main():
-    # Sample usage example with dummy cookie data
+    # Sample usage example with dummy cookie data (replace with real cookies for actual use)
     cookies = {
-        "c_user": "1234567890",
-        "xs": "abcdefghijklmnopqrstuvwxyz",
-        "datr": "1234567890abcdef",
-        "fr": "dummyfrvalue",
+        "c_user": "1234567890",           # User ID
+        "xs": "abcdefghijklmnopqrstuvwxyz", # Session key
+        "datr": "1234567890abcdef",       # Device tracking cookie
+        "fr": "dummyfrvalue",             # Additional cookie
     }
 
     # Extract the access token
@@ -79,7 +88,7 @@ def main():
         print(f"Extracted access token: {access_token}")
         # Validate the token
         if validate_token(access_token):
-            print("Token is valid!")
+            print("Token is valid and can be used with the Graph API!")
         else:
             print("Token is invalid or expired.")
     else:
