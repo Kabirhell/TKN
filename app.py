@@ -1,98 +1,64 @@
-import requests
+from flask import Flask, request, jsonify
 import re
-import json
 
-def extract_access_token(cookies):
-    """
-    Extracts a Facebook access token using the provided cookies by simulating a mobile endpoint request.
+app = Flask(__name__)
 
-    Args:
-        cookies (dict): Dictionary of Facebook cookies (e.g., 'c_user', 'xs', 'datr', etc.)
-
-    Returns:
-        str: Facebook access token, or None if extraction fails
-    """
-    # Target a mobile endpoint that might expose an access token
-    mobile_url = "https://m.facebook.com/composer/ocelot/async_loader/?publisher=feed"
-
-    # Prepare headers to mimic a browser request
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.105 Mobile Safari/537.36",
-        "Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items()),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Referer": "https://m.facebook.com/",
-    }
-
+def extract_token_from_cookies(cookies):
     try:
-        # Make the request to the mobile endpoint
-        response = requests.get(mobile_url, headers=headers, timeout=10)
-
-        # Check if the response was successful
-        if response.status_code == 200:
-            # Look for an access token in the response text using regex
-            token_match = re.search(r'"accessToken":"(EA[A-Za-z0-9]+)"', response.text)
-            if token_match:
-                return token_match.group(1)
-            else:
-                print("No access token found in response.")
-                return None
-        else:
-            raise Exception(f"Request failed with status code: {response.status_code}")
-    except requests.RequestException as e:
-        print(f"Network error occurred: {str(e)}")
+        # Common patterns for Facebook access tokens
+        token_patterns = [
+            r'EAA[0-9A-Za-z]+',  # Common Facebook token pattern
+            r'access_token=([^&]+)'
+        ]
+        
+        # First try to find token directly in cookies
+        for pattern in token_patterns:
+            match = re.search(pattern, cookies)
+            if match:
+                return match.group(0) if pattern == token_patterns[0] else match.group(1)
+        
+        # If no direct token found, try to extract from common cookie fields
+        cookie_dict = {}
+        for cookie in cookies.split(';'):
+            if '=' in cookie:
+                key, value = cookie.split('=', 1)
+                cookie_dict[key.strip()] = value.strip()
+        
+        # Check common Facebook cookie names that might contain token
+        possible_token_fields = ['c_user', 'xs', 'fr', 'datr']
+        for field in possible_token_fields:
+            if field in cookie_dict:
+                for pattern in token_patterns:
+                    match = re.search(pattern, cookie_dict[field])
+                    if match:
+                        return match.group(0) if pattern == token_patterns[0] else match.group(1)
+        
         return None
     except Exception as e:
-        print(f"Error extracting access token: {str(e)}")
-        return None
+        return str(e)
 
-def validate_token(token):
-    """
-    Validates the extracted access token by making a test request to the Graph API.
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
 
-    Args:
-        token (str): The extracted Facebook access token
-
-    Returns:
-        bool: True if the token is valid, False otherwise
-    """
-    graph_api_url = "https://graph.facebook.com/v19.0/me"
-    params = {
-        "access_token": token,
-        "fields": "id,name"  # Simple fields to verify token validity
-    }
-
+@app.route('/extract', methods=['POST'])
+def extract():
     try:
-        response = requests.get(graph_api_url, params=params, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if "id" in data:
-                return True
-        return False
-    except Exception as e:
-        print(f"Token validation failed: {str(e)}")
-        return False
-
-def main():
-    # Sample usage example with dummy cookie data (replace with real cookies for actual use)
-    cookies = {
-        "c_user": "1234567890",           # User ID
-        "xs": "abcdefghijklmnopqrstuvwxyz", # Session key
-        "datr": "1234567890abcdef",       # Device tracking cookie
-        "fr": "dummyfrvalue",             # Additional cookie
-    }
-
-    # Extract the access token
-    access_token = extract_access_token(cookies)
-
-    if access_token:
-        print(f"Extracted access token: {access_token}")
-        # Validate the token
-        if validate_token(access_token):
-            print("Token is valid and can be used with the Graph API!")
+        data = request.get_json()
+        cookies = data.get('cookies', '')
+        
+        if not cookies:
+            return jsonify({'error': 'No cookies provided'})
+        
+        token = extract_token_from_cookies(cookies)
+        
+        if token:
+            return jsonify({'token': token})
         else:
-            print("Token is invalid or expired.")
-    else:
-        print("Failed to extract access token.")
+            return jsonify({'error': 'Could not extract token from provided cookies'})
+            
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(debug=True)
